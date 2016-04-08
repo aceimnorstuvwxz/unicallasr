@@ -1,5 +1,2 @@
 *.o
 *.lo
-*.la
-.deps/*
-.libs/*
