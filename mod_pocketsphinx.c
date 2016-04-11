@@ -16,10 +16,9 @@
 #include "ifly/msp_cmn.h"
 #include "ifly/msp_errors.h"
 
-#define	IFLY_BUFFER_SIZE 2048
-#define IFLY_HINTS_SIZE  100
-#define IFLY_GRAMID_LEN	128
+#define	IFLY_BUFFER_SIZE 4096
 #define IFLY_FRAME_LEN	640 
+#define IFLY_HINTS_SIZE  100
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_pocketsphinx_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_pocketsphinx_shutdown);
@@ -78,6 +77,15 @@ typedef struct {
 	int32_t confidence;
 	char const *uttid;
 	cmd_ln_t *config;
+    
+    const char* ifly_session_id;
+    char ifly_rec_result[IFLY_BUFFER_SIZE];
+    char ifly_hints[IFLY_HINTS_SIZE];
+    unsigned int ifly_total_len;
+    int ifly_aud_stat;
+    int ifly_ep_stat;
+    int ifly_rec_stat;
+    int ifly_errcode;
 } pocketsphinx_t;
 
 /*! function to open the asr interface */
@@ -88,8 +96,8 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
     
     int ret = MSP_SUCCESS;
     const char* login_params = "appid = 56f37a90, work_dir = ."; //登录参数,appid与msc库绑定,请勿随意改动
-
-    
+    const char* session_begin_params	=	"sub = iat, domain = iat, language = zh_ch, accent = mandarin, sample_rate = 16000, result_type = plain, result_encoding = utf8";   
+    int errcode;
     
     /* chen */
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_open<<<<<<<<<\n");
@@ -125,8 +133,16 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
 	ps->confidence_threshold = globals.confidence_threshold;
     
     
-    
     /* ify login*/
+        ps->ifly_session_id					=	NULL;
+	//ps->ifly_rec_result		=	{NULL};	
+	//ps->ifly_hints			=	{NULL}; //hints为结束本次会话的原因描述，由用户自定义
+	ps->ifly_total_len					=	0; 
+	ps->ifly_aud_stat					=	MSP_AUDIO_SAMPLE_CONTINUE ;		//音频状态
+	ps->ifly_ep_stat						=	MSP_EP_LOOKING_FOR_SPEECH;		//端点检测
+	ps->ifly_rec_stat					=	MSP_REC_STATUS_SUCCESS ;			//识别状态
+    
+    
     
     ret = MSPLogin(NULL, NULL, login_params); //第一个参数是用户名，第二个参数是密码，均传NULL即可，第三个参数是登录参数
 	if (MSP_SUCCESS != ret) {
@@ -135,8 +151,15 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogin success !!!<<<<<<<<<\n");
     }
     
-   
+    
+    /* ifly open session */
+    ps->ifly_session_id = QISRSessionBegin(NULL, session_begin_params, &errcode);
+    if (MSP_SUCCESS != errcode) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>QISRSessionBegin fail error !!!<<<<<<<<<\n");   
+    }
+    
 
+    
 	return SWITCH_STATUS_SUCCESS;
 }
 
@@ -272,9 +295,11 @@ static switch_status_t pocketsphinx_asr_close(switch_asr_handle_t *ah, switch_as
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Port Closed.\n");
 	switch_set_flag(ah, SWITCH_ASR_FLAG_CLOSED);
     
-    /* ifly logout */
+    /* ifly logout & end session */
     MSPLogout();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogout<<<<<<<<<\n");
     
+	QISRSessionEnd(ps->ifly_session_id, ps->ifly_hints);
     
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -352,6 +377,7 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
 {
 	pocketsphinx_t *ps = (pocketsphinx_t *) ah->private_info;
 	int rv = 0;
+    int ret = MSP_SUCCESS;
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_feed<<<<<<<<<\n");
 
@@ -410,6 +436,15 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
 		if (ps->listening) {
 			switch_mutex_lock(ps->flag_mutex);
 			rv = ps_process_raw(ps->ps, (int16 *) data, len / 2, FALSE, FALSE);
+            
+            /* chenbingfeng*/
+            ret = QISRAudioWrite(ps->ifly_session_id, (const void *)data, len, ps->ifly_aud_stat, &(ps->ifly_ep_stat), &(ps->ifly_rec_stat));
+		    if (MSP_SUCCESS != ret)
+		    {
+			    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "\nQISRAudioWrite failed! error code:%d\n", ret);
+		    }
+            
+            
 			switch_mutex_unlock(ps->flag_mutex);
 		}
 
@@ -474,8 +509,16 @@ static switch_status_t pocketsphinx_asr_resume(switch_asr_handle_t *ah)
 static switch_status_t pocketsphinx_asr_check_results(switch_asr_handle_t *ah, switch_asr_flag_t *flags)
 {
 	pocketsphinx_t *ps = (pocketsphinx_t *) ah->private_info;
+    int errcode = MSP_SUCCESS;
+    const char *rslt;
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_check_results<<<<<<<<<\n");
+
+
+    /* chenbingfeng */
+    rslt = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>result !!!>> %s <<<<<<<<<<<<\n", rslt);
+
 
 	return (switch_test_flag(ps, PSFLAG_NOINPUT) || switch_test_flag(ps, PSFLAG_NOMATCH) || switch_test_flag(ps, PSFLAG_HAS_TEXT) || switch_test_flag(ps, PSFLAG_BARGE)) ? SWITCH_STATUS_SUCCESS : SWITCH_STATUS_FALSE;
 }
