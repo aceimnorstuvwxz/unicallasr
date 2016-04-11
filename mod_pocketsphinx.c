@@ -531,7 +531,7 @@ static switch_status_t pocketsphinx_asr_get_results(switch_asr_handle_t *ah, cha
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Recognized: %s, Confidence: %d, Confidence-Threshold: %d\n", ps->hyp, ps->confidence, ps->confidence_threshold);
 		switch_mutex_unlock(ps->flag_mutex);
 
-		*xmlstr = switch_mprintf("\n\n ---->  %s  <-----\n\n", ps->hyp);
+		*xmlstr = switch_mprintf("%s", ps->hyp);
 
 		if (!switch_test_flag(ps, PSFLAG_INPUT_TIMERS) && switch_test_flag(ah, SWITCH_ASR_FLAG_AUTO_RESUME)) {
 			switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Auto Resuming\n");
@@ -545,24 +545,14 @@ static switch_status_t pocketsphinx_asr_get_results(switch_asr_handle_t *ah, cha
 		switch_clear_flag_locked(ps, PSFLAG_NOINPUT);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "NO INPUT\n");
 
-		*xmlstr = switch_mprintf("<?xml version=\"1.0\"?>\n"
-								 "<result grammar=\"%s\">\n"
-								 "  <interpretation>\n"
-								 "    <input mode=\"speech\"><noinput/></input>\n"
-								 "  </interpretation>\n"
-								 "</result>\n", ps->grammar);
+		*xmlstr = switch_mprintf("");
 
 		status = SWITCH_STATUS_SUCCESS;
 	} else if (switch_test_flag(ps, PSFLAG_NOMATCH)) {
 		switch_clear_flag_locked(ps, PSFLAG_NOMATCH);
 		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "NO MATCH\n");
 
-		*xmlstr = switch_mprintf("<?xml version=\"1.0\"?>\n"
-								 "<result grammar=\"%s\">\n"
-								 "  <interpretation>\n"
-								 "    <input mode=\"speech\"><nomatch/></input>\n"
-								 "  </interpretation>\n"
-								 "</result>\n", ps->grammar);
+		*xmlstr = switch_mprintf("");
 
 		status = SWITCH_STATUS_SUCCESS;
 	}
