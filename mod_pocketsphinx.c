@@ -304,6 +304,7 @@ static switch_status_t pocketsphinx_asr_close(switch_asr_handle_t *ah, switch_as
 	return SWITCH_STATUS_SUCCESS;
 }
 
+/* detect if should stop */
 static switch_bool_t stop_detect(pocketsphinx_t *ps, int16_t *data, unsigned int samples)
 {
 	uint32_t score, count = 0, j = 0;
@@ -635,15 +636,14 @@ static switch_status_t load_config(void)
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>load_config<<<<<<<<<\n");
 
-
 	/* Set defaults */
 	globals.thresh = 400;
 	globals.silence_hits = 35;
 	globals.listen_hits = 1;
 	globals.auto_reload = 1;
 	globals.start_input_timers = SWITCH_FALSE;
-	globals.no_input_timeout = 4000;
-	globals.speech_timeout = 5000; //chenbingfeng
+	globals.no_input_timeout = 1000; // stop when silence last THIS time
+	globals.speech_timeout = 10000; // totcal speech length
 	globals.confidence_threshold = 0;
 
 	if (!(xml = switch_xml_open_cfg(cf, &cfg, NULL))) {
@@ -699,11 +699,17 @@ static switch_status_t load_config(void)
 	if (!globals.language_weight) {
 		globals.language_weight = switch_core_strdup(globals.pool, "6.5");
 	}
+    
 
   done:
 	if (xml) {
 		switch_xml_free(xml);
 	}
+    
+    /* log key configuration chenbingfeng */
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "--->no_input_timeout=%d\n", globals.no_input_timeout);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "--->speech_timeout=%d\n", globals.speech_timeout);
+
 
 	return status;
 }
