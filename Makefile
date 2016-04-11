@@ -300,7 +300,8 @@ JACK_LIBS = -ljack -lpthread
 JAVA_FLAGS = -I/usr/lib/jvm/default-java/include -DHasJava
 JAVA_HOME = /usr/lib/jvm/default-java
 LD = /usr/bin/ld -m elf_x86_64
-LDFLAGS = 
+# chenbingfeng
+LDFLAGS = -L./libs/x64 -lmsc -lrt -ldl -lpthread
 LDNS_CFLAGS = 
 LDNS_LIBS = -lldns 
 LIBEDIT_CFLAGS = -I/usr/include/editline 

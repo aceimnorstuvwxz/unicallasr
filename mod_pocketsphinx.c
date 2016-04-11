@@ -1,33 +1,9 @@
 /*
- * FreeSWITCH Modular Media Switching Software Library / Soft-Switch Application
- * Copyright (C) 2005-2013, Anthony Minessale II <anthm@freeswitch.org>
+ * (C) 2016 Unicall
  *
- * Version: MPL 1.1
+ * Description: IVR speech recognition with ifly iat
  *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is FreeSWITCH Modular Media Switching Software Library / Soft-Switch Application
- *
- * The Initial Developer of the Original Code is
- * Anthony Minessale II <anthm@freeswitch.org>
- * Portions created by the Initial Developer are Copyright (C)
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Brian West <brian@freeswitch.org>
- * Christopher Rienzo <chris.rienzo@grasshopper.com>
- *
- * mod_pocketsphinx - Pocket Sphinx
- *
+ * Author: chenbingfeng
  *
  */
 
@@ -35,6 +11,15 @@
 #include <pocketsphinx.h>
 #include <sphinxbase/err.h>
 #include <sphinxbase/logmath.h>
+
+#include "ifly/qisr.h"
+#include "ifly/msp_cmn.h"
+#include "ifly/msp_errors.h"
+
+#define	IFLY_BUFFER_SIZE 2048
+#define IFLY_HINTS_SIZE  100
+#define IFLY_GRAMID_LEN	128
+#define IFLY_FRAME_LEN	640 
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_pocketsphinx_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_pocketsphinx_shutdown);
@@ -101,6 +86,11 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
 	pocketsphinx_t *ps;
     
     
+    int ret = MSP_SUCCESS;
+    const char* login_params = "appid = 56f37a90, work_dir = ."; //登录参数,appid与msc库绑定,请勿随意改动
+
+    
+    
     /* chen */
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_open<<<<<<<<<\n");
 
@@ -133,6 +123,19 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
 	ps->no_input_timeout = globals.no_input_timeout;
 	ps->speech_timeout = globals.speech_timeout;
 	ps->confidence_threshold = globals.confidence_threshold;
+    
+    
+    
+    /* ify login*/
+    
+    ret = MSPLogin(NULL, NULL, login_params); //第一个参数是用户名，第二个参数是密码，均传NULL即可，第三个参数是登录参数
+	if (MSP_SUCCESS != ret) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogin fail error!!!<<<<<<<<<\n");
+	} else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogin success !!!<<<<<<<<<\n");
+    }
+    
+   
 
 	return SWITCH_STATUS_SUCCESS;
 }
@@ -268,6 +271,11 @@ static switch_status_t pocketsphinx_asr_close(switch_asr_handle_t *ah, switch_as
 	switch_clear_flag(ps, PSFLAG_READY);
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Port Closed.\n");
 	switch_set_flag(ah, SWITCH_ASR_FLAG_CLOSED);
+    
+    /* ifly logout */
+    MSPLogout();
+    
+    
 	return SWITCH_STATUS_SUCCESS;
 }
 

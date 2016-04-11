@@ -149,7 +149,8 @@ mod_pocketsphinx_la-mod_pocketsphinx.lo: mod_pocketsphinx.c \
  /usr/src/freeswitch.git/libs/sphinxbase-0.8/include/sphinxbase/hash_table.h \
  /usr/src/freeswitch.git/libs/sphinxbase-0.8/include/sphinxbase/listelem_alloc.h \
  /usr/src/freeswitch.git/libs/sphinxbase-0.8/include/sphinxbase/jsgf.h \
- /usr/src/freeswitch.git/libs/sphinxbase-0.8/include/sphinxbase/err.h
+ /usr/src/freeswitch.git/libs/sphinxbase-0.8/include/sphinxbase/err.h \
+ ifly/qisr.h ifly/msp_types.h ifly/msp_cmn.h ifly/msp_errors.h
 
 /usr/include/stdc-predef.h:
 
@@ -514,3 +515,11 @@ mod_pocketsphinx_la-mod_pocketsphinx.lo: mod_pocketsphinx.c \
 /usr/src/freeswitch.git/libs/sphinxbase-0.8/include/sphinxbase/jsgf.h:
 
 /usr/src/freeswitch.git/libs/sphinxbase-0.8/include/sphinxbase/err.h:
+
+ifly/qisr.h:
+
+ifly/msp_types.h:
+
+ifly/msp_cmn.h:
+
+ifly/msp_errors.h:
