@@ -329,10 +329,11 @@ static switch_bool_t stop_detect(pocketsphinx_t *ps, int16_t *data, unsigned int
 	score = (uint32_t) (energy / samples);
     
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-     ">>>>>>>>stop_detect score = %d listening=%d listen_hits=%d<<<<<<<<<\n",
+     ">>>>>>>>detect score = %d listening=%d status=%d ep=%d<<<<<<<<<\n",
      (int)score,
      ps->listening,
-     ps->listen_hits);
+     ps->ifly_rec_stat,
+     ps->ifly_ep_stat);
 
 
 	if (score >= ps->thresh) {
@@ -405,7 +406,13 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
 			char const *hyp;
 
 			switch_mutex_lock(ps->flag_mutex);
-            (hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode));
+            
+            QISRAudioWrite(ps->ifly_session_id, NULL, 0, MSP_AUDIO_SAMPLE_LAST, &(ps->ifly_ep_stat), &(ps->ifly_rec_stat));
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> tell zero <<<<<<<<<\n");
+
+            hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode);
+            
+            
             
             if (hyp || ps->ifly_rec_stat != MSP_REC_STATUS_INCOMPLETE) {
                 ps->ifly_wait_result = SWITCH_FALSE;
