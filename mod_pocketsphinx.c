@@ -96,8 +96,7 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
 	pocketsphinx_t *ps;
     
     
-    int ret = MSP_SUCCESS;
-    const char* login_params = "appid = 56f37a90, work_dir = ."; //登录参数,appid与msc库绑定,请勿随意改动
+
     const char* session_begin_params	=	"sub = iat, domain = iat, language = zh_ch, accent = mandarin, sample_rate = 16000, result_type = plain, result_encoding = utf8";   
     int errcode;
     
@@ -147,12 +146,7 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
     
     
     
-    ret = MSPLogin(NULL, NULL, login_params); //第一个参数是用户名，第二个参数是密码，均传NULL即可，第三个参数是登录参数
-	if (MSP_SUCCESS != ret) {
-		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogin fail error!!!<<<<<<<<<\n");
-	} else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogin success !!!<<<<<<<<<\n");
-    }
+
     
     
     /* ifly open session */
@@ -298,9 +292,7 @@ static switch_status_t pocketsphinx_asr_close(switch_asr_handle_t *ah, switch_as
 	switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Port Closed.\n");
 	switch_set_flag(ah, SWITCH_ASR_FLAG_CLOSED);
     
-    /* ifly logout & end session */
-    MSPLogout();
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogout<<<<<<<<<\n");
+    /* ifly  end session */
     
 	QISRSessionEnd(ps->ifly_session_id, ps->ifly_hints);
     
@@ -413,24 +405,25 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
 			char const *hyp;
 
 			switch_mutex_lock(ps->flag_mutex);
+            (hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode));
             
-			if ((hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode))) {
-                                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k0<<<<<<<<<\n");
-
+            if (hyp || ps->ifly_rec_stat != MSP_REC_STATUS_INCOMPLETE) {
                 ps->ifly_wait_result = SWITCH_FALSE;
+            }
+            
+			if (hyp) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k0<<<<<<<<<\n");
+
 				if (errcode == MSP_SUCCESS && !zstr(hyp)) {
-					//ps_end_utt(ps->ps);
-                                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k2<<<<<<<<<\n");
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k2<<<<<<<<<\n");
 
 					switch_clear_flag(ps, PSFLAG_READY);
-                    
 					ps->hyp = switch_core_strdup(ah->memory_pool, hyp);
 					switch_set_flag(ps, PSFLAG_HAS_TEXT);
 					
 				}
-			} else {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k1<<<<<<<<<\n");
-            }
+			} 
+            
 			if (switch_test_flag(ps, PSFLAG_SPEECH_TIMEOUT) && !switch_test_flag(ps, PSFLAG_HAS_TEXT)) {
 				/* heard something, but doesn't match anything */
 				switch_clear_flag(ps, PSFLAG_READY);
@@ -441,12 +434,15 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
 		} else if (  ps->ifly_wait_result == SWITCH_TRUE ) {
             
 			char const *hyp;
-            
             switch_mutex_lock(ps->flag_mutex);
+            hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode);
 
-            if ((hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode))) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k0<<<<<<<<<\n");
+            if (hyp || ps->ifly_rec_stat != MSP_REC_STATUS_INCOMPLETE) {
                 ps->ifly_wait_result = SWITCH_FALSE;
+            }
+            
+            if (hyp) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k0<<<<<<<<<\n");
 
 				if (errcode == MSP_SUCCESS && !zstr(hyp)) {
                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k2<<<<<<<<<\n");
@@ -457,9 +453,7 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
 					switch_set_flag(ps, PSFLAG_HAS_TEXT);
 					
 				}
-			} else {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k1<<<<<<<<<\n");
-            }
+			} 
             
             switch_mutex_unlock(ps->flag_mutex);
 
@@ -670,6 +664,8 @@ static switch_status_t load_config(void)
 	char *cf = "pocketsphinx.conf";
 	switch_xml_t cfg, xml = NULL, param, settings;
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
+    int ret = MSP_SUCCESS;
+    const char* login_params = "appid = 56f37a90, work_dir = ."; //登录参数,appid与msc库绑定,请勿随意改动
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>load_config<<<<<<<<<\n");
 
@@ -748,6 +744,14 @@ static switch_status_t load_config(void)
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "--->no_input_timeout=%d\n", globals.no_input_timeout);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "--->speech_timeout=%d\n", globals.speech_timeout);
+    
+    
+    ret = MSPLogin(NULL, NULL, login_params); //第一个参数是用户名，第二个参数是密码，均传NULL即可，第三个参数是登录参数
+	if (MSP_SUCCESS != ret) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogin fail error!!!<<<<<<<<<\n");
+	} else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogin success !!!<<<<<<<<<\n");
+    }
 
 
 	return status;
@@ -809,6 +813,10 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_pocketsphinx_load)
 
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_pocketsphinx_shutdown)
 {
+    
+    MSPLogout();
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>MSPLogout<<<<<<<<<\n");
+    
 	switch_event_unbind(&NODE);
 	return SWITCH_STATUS_UNLOAD;
 }
