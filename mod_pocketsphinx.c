@@ -86,6 +86,8 @@ typedef struct {
     int ifly_ep_stat;
     int ifly_rec_stat;
     int ifly_errcode;
+    
+    switch_bool_t ifly_wait_result;
 } pocketsphinx_t;
 
 /*! function to open the asr interface */
@@ -141,6 +143,7 @@ static switch_status_t pocketsphinx_asr_open(switch_asr_handle_t *ah, const char
 	ps->ifly_aud_stat					=	MSP_AUDIO_SAMPLE_CONTINUE ;		//音频状态
 	ps->ifly_ep_stat						=	MSP_EP_LOOKING_FOR_SPEECH;		//端点检测
 	ps->ifly_rec_stat					=	MSP_REC_STATUS_SUCCESS ;			//识别状态
+    ps->ifly_wait_result = SWITCH_FALSE;
     
     
     
@@ -310,13 +313,17 @@ static switch_bool_t stop_detect(pocketsphinx_t *ps, int16_t *data, unsigned int
 	uint32_t score, count = 0, j = 0;
 	double energy = 0;
     
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>stop_detect<<<<<<<<<\n");
 
 
 	if (ps->countdown) {
 		if (!--ps->countdown) {
+            /* when countdown ==0 */
 			ps->silence_hits = ps->org_silence_hits;
 			ps->listening = 0;
+            
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>stop_detect:stop by countdown=0<<<<<<<<<\n");
+            ps->ifly_wait_result = SWITCH_TRUE;
+
 			return SWITCH_TRUE;
 		}
 		return SWITCH_FALSE;
@@ -328,6 +335,13 @@ static switch_bool_t stop_detect(pocketsphinx_t *ps, int16_t *data, unsigned int
 	}
 
 	score = (uint32_t) (energy / samples);
+    
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+     ">>>>>>>>stop_detect score = %d listening=%d listen_hits=%d<<<<<<<<<\n",
+     (int)score,
+     ps->listening,
+     ps->listen_hits);
+
 
 	if (score >= ps->thresh) {
 		if (++ps->listening == 1) {
@@ -348,6 +362,9 @@ static switch_bool_t stop_detect(pocketsphinx_t *ps, int16_t *data, unsigned int
 			if (ps->speech_timeout > 0 && !switch_test_flag(ps, PSFLAG_SPEECH_TIMEOUT) && elapsed_ms >= ps->speech_timeout) {
 				switch_set_flag_locked(ps, PSFLAG_SPEECH_TIMEOUT);
 				ps->listening = 0;
+                
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>stop_detect:stop by speech_timeout<<<<<<<<<\n");
+
 				return SWITCH_TRUE;
 			}
 		} else {
@@ -357,6 +374,9 @@ static switch_bool_t stop_detect(pocketsphinx_t *ps, int16_t *data, unsigned int
 				switch_set_flag(ps, PSFLAG_NOINPUT);
 				switch_mutex_unlock(ps->flag_mutex);
 				ps->listening = 0;
+                
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>stop_detect:stop by no_input_timeout<<<<<<<<<\n");
+
 				return SWITCH_TRUE;
 			}
 		}
@@ -381,7 +401,7 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
     int ret = MSP_SUCCESS;
     int errcode = MSP_SUCCESS;
     
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_feed<<<<<<<<<\n");
+    //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_feed<<<<<<<<<\n");
 
 
 	if (switch_test_flag(ah, SWITCH_ASR_FLAG_CLOSED))
@@ -389,34 +409,61 @@ static switch_status_t pocketsphinx_asr_feed(switch_asr_handle_t *ah, void *data
 
 	if (!switch_test_flag(ps, PSFLAG_NOMATCH) && !switch_test_flag(ps, PSFLAG_NOINPUT) && !switch_test_flag(ps, PSFLAG_HAS_TEXT) && switch_test_flag(ps, PSFLAG_READY)) {
 		if (stop_detect(ps, (int16_t *) data, len / 2)) {
+                    
 			char const *hyp;
 
 			switch_mutex_lock(ps->flag_mutex);
             
-            //chenbingfeng
-            
-    //rslt = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode);
-    //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>result !!!>> %s <<<<<<<<<<<<\n", rslt);
-     
-            
-            
 			if ((hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode))) {
+                                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k0<<<<<<<<<\n");
+
+                ps->ifly_wait_result = SWITCH_FALSE;
 				if (errcode == MSP_SUCCESS && !zstr(hyp)) {
 					//ps_end_utt(ps->ps);
+                                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k2<<<<<<<<<\n");
+
 					switch_clear_flag(ps, PSFLAG_READY);
                     
 					ps->hyp = switch_core_strdup(ah->memory_pool, hyp);
 					switch_set_flag(ps, PSFLAG_HAS_TEXT);
 					
 				}
-			}
+			} else {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k1<<<<<<<<<\n");
+            }
 			if (switch_test_flag(ps, PSFLAG_SPEECH_TIMEOUT) && !switch_test_flag(ps, PSFLAG_HAS_TEXT)) {
 				/* heard something, but doesn't match anything */
 				switch_clear_flag(ps, PSFLAG_READY);
 				switch_set_flag(ps, PSFLAG_NOMATCH);
 			}
 			switch_mutex_unlock(ps->flag_mutex);
-		}
+            
+		} else if (  ps->ifly_wait_result == SWITCH_TRUE ) {
+            
+			char const *hyp;
+            
+            switch_mutex_lock(ps->flag_mutex);
+
+            if ((hyp = QISRGetResult(ps->ifly_session_id, &(ps->ifly_rec_stat), 0, &errcode))) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k0<<<<<<<<<\n");
+                ps->ifly_wait_result = SWITCH_FALSE;
+
+				if (errcode == MSP_SUCCESS && !zstr(hyp)) {
+                   switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k2<<<<<<<<<\n");
+
+					switch_clear_flag(ps, PSFLAG_READY);
+                    
+					ps->hyp = switch_core_strdup(ah->memory_pool, hyp);
+					switch_set_flag(ps, PSFLAG_HAS_TEXT);
+					
+				}
+			} else {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>> k1<<<<<<<<<\n");
+            }
+            
+            switch_mutex_unlock(ps->flag_mutex);
+
+        }
 
 		/* only feed ps_process_raw when we are listening */
 		if (ps->listening) {
@@ -498,7 +545,7 @@ static switch_status_t pocketsphinx_asr_check_results(switch_asr_handle_t *ah, s
     //int errcode = MSP_SUCCESS;
     //const char *rslt;
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_check_results<<<<<<<<<\n");
+    //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_check_results<<<<<<<<<\n");
 
 
     /* chenbingfeng */
@@ -516,7 +563,7 @@ static switch_status_t pocketsphinx_asr_get_results(switch_asr_handle_t *ah, cha
 	pocketsphinx_t *ps = (pocketsphinx_t *) ah->private_info;
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
     
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_get_results<<<<<<<<<\n");
+    //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, ">>>>>>>>pocketsphinx_asr_get_results<<<<<<<<<\n");
 
 
 	if (switch_test_flag(ps, PSFLAG_BARGE)) {
@@ -628,7 +675,7 @@ static switch_status_t load_config(void)
 
 	/* Set defaults */
 	globals.thresh = 400;
-	globals.silence_hits = 35;
+	globals.silence_hits = 15;
 	globals.listen_hits = 1;
 	globals.auto_reload = 1;
 	globals.start_input_timers = SWITCH_FALSE;
@@ -657,7 +704,7 @@ static switch_status_t load_config(void)
 			} else if (!strcasecmp(var, "confidence_threshold")) {
 				globals.confidence_threshold = atoi(val);
 			} else if (!strcasecmp(var, "silence-hits")) {
-				globals.silence_hits = atoi(val);
+				//globals.silence_hits = atoi(val);
 			} else if (!strcasecmp(var, "language-weight")) {
 				globals.language_weight = switch_core_strdup(globals.pool, val);
 			} else if (!strcasecmp(var, "listen-hits")) {
@@ -697,6 +744,8 @@ static switch_status_t load_config(void)
 	}
     
     /* log key configuration chenbingfeng */
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "--->thresh=%d\n", globals.thresh);
+
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "--->no_input_timeout=%d\n", globals.no_input_timeout);
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "--->speech_timeout=%d\n", globals.speech_timeout);
 
